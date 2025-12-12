@@ -1,0 +1,5 @@
+{
+  "name": "TubeStep",
+  "description": "Transform YouTube tutorials into concise, actionable step-by-step written guides using Gemini AI.",
+  "requestFramePermissions": []
+}
