@@ -20,17 +20,25 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, history, onSelectGui
 
   return (
     <>
-      {/* Backdrop */}
-      {isOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={onClose}
-        ></div>
-      )}
+      {/* Mobile Backdrop */}
+      <div 
+        className={`fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        onClick={onClose}
+      ></div>
 
-      {/* Panel */}
-      <div className={`fixed inset-y-0 left-0 w-80 bg-white border-r border-gray-200 z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="h-full flex flex-col">
+      {/* Sidebar Panel 
+          - Mobile: Fixed, slide in/out
+          - Desktop: Relative (part of flex layout), width transition
+      */}
+      <div 
+        className={`
+          fixed lg:static inset-y-0 left-0 bg-white border-r border-gray-200 z-50 
+          transform transition-all duration-300 ease-in-out
+          ${isOpen ? 'translate-x-0 w-80' : '-translate-x-full lg:translate-x-0 lg:w-0 lg:overflow-hidden lg:border-r-0'}
+        `}
+      >
+        <div className="h-full flex flex-col w-80"> {/* Fixed width container inside to prevent content squishing */}
+          
           {/* Header Section */}
           <div className="p-4 border-b border-gray-100 bg-gray-50 space-y-4">
             <div className="flex items-center justify-between">
@@ -46,7 +54,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, history, onSelectGui
             <button
               onClick={() => {
                 onGoHome();
-                onClose();
+                // On mobile, close sidebar after clicking. On desktop, keep it open.
+                if (window.innerWidth < 1024) onClose();
               }}
               className="w-full flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-700 text-white py-2 rounded-lg font-medium transition-colors shadow-sm"
             >
@@ -66,6 +75,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, history, onSelectGui
             </div>
           </div>
 
+          {/* History List */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {history.length === 0 ? (
               <div className="text-center py-10 text-gray-400">
@@ -83,7 +93,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, history, onSelectGui
                   key={guide.id}
                   onClick={() => {
                     onSelectGuide(guide);
-                    onClose();
+                    if (window.innerWidth < 1024) onClose();
                   }}
                   className="w-full text-left p-3 rounded-lg hover:bg-gray-50 border border-gray-100 hover:border-brand-200 transition-all group relative overflow-hidden"
                 >

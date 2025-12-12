@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Guide, AppStatus, LoadingState } from './types';
 import { generateGuideFromVideo, extractVideoId, extractPlaylistId, getVideosFromPlaylist } from './services/geminiService';
+import { supabase } from './services/supabaseClient';
 import LoadingOverlay from './components/LoadingOverlay';
 import GuideView from './components/GuideView';
 import Sidebar from './components/Sidebar';
-import { MenuIcon, ArrowRightIcon, PlayIcon } from './components/Icons';
+import AuthModal from './components/AuthModal';
+import { MenuIcon, ArrowRightIcon, PlayIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, UserIcon, LogOutIcon } from './components/Icons';
 
 const App: React.FC = () => {
   // State
   const [urlInput, setUrlInput] = useState('');
   const [currentGuide, setCurrentGuide] = useState<Guide | null>(null);
   const [history, setHistory] = useState<Guide[]>([]);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Default open on desktop
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [user, setUser] = useState<any>(null);
   
   const [loadingState, setLoadingState] = useState<LoadingState>({
     status: AppStatus.IDLE,
@@ -19,22 +23,113 @@ const App: React.FC = () => {
     progress: 0
   });
 
-  // Load history from local storage on mount
+  // Auth Status Check
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchSupabaseHistory(session.user.id);
+      else loadLocalHistory();
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const newUser = session?.user ?? null;
+      setUser(newUser);
+      if (newUser) {
+         // Clear local history from state to avoid confusion, fetch DB history
+         fetchSupabaseHistory(newUser.id);
+      } else {
+         // Fallback to local
+         loadLocalHistory();
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const loadLocalHistory = () => {
     const savedHistory = localStorage.getItem('tubestep_history');
     if (savedHistory) {
       try {
         setHistory(JSON.parse(savedHistory));
       } catch (e) {
-        console.error("Failed to parse history", e);
+        console.error("Failed to parse local history", e);
       }
     }
-  }, []);
+  };
 
-  // Save history when it changes
-  useEffect(() => {
-    localStorage.setItem('tubestep_history', JSON.stringify(history));
-  }, [history]);
+  const fetchSupabaseHistory = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('guides')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      // Map DB snake_case to CamelCase Guide interface if needed
+      // Assuming DB columns match keys but strictly snake_case vs camelCase needs attention if mismatched.
+      // Based on the SQL provided, we used snake_case for DB columns.
+      // We need to map them.
+      const mappedGuides: Guide[] = (data || []).map((row: any) => ({
+        id: row.id,
+        videoUrl: row.video_url,
+        videoId: row.video_id,
+        playlistId: row.playlist_id,
+        title: row.title,
+        summary: row.summary,
+        estimatedTime: row.estimated_time,
+        difficulty: row.difficulty,
+        prerequisites: row.prerequisites || [],
+        tools: row.tools || [],
+        steps: row.steps || [],
+        sources: row.sources || [],
+        createdAt: new Date(row.created_at).getTime()
+      }));
+
+      setHistory(mappedGuides);
+    } catch (err) {
+      console.error("Error fetching history:", err);
+    }
+  };
+
+  const saveGuideToHistory = async (guide: Guide) => {
+    // Optimistic Update
+    setHistory(prev => [guide, ...prev]);
+
+    if (user) {
+      // Save to Supabase
+      try {
+        const { error } = await supabase.from('guides').insert({
+          user_id: user.id,
+          video_url: guide.videoUrl,
+          video_id: guide.videoId,
+          playlist_id: guide.playlistId,
+          title: guide.title,
+          summary: guide.summary,
+          estimated_time: guide.estimatedTime,
+          difficulty: guide.difficulty,
+          prerequisites: guide.prerequisites,
+          tools: guide.tools,
+          steps: guide.steps,
+          sources: guide.sources
+        });
+        if (error) console.error("Failed to save to Supabase:", error);
+        // Refresh to get real ID if needed, but for now ID is generated
+      } catch (err) {
+        console.error("Supabase insert error", err);
+      }
+    } else {
+      // Save to LocalStorage
+      const newHistory = [guide, ...history];
+      localStorage.setItem('tubestep_history', JSON.stringify(newHistory));
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setCurrentGuide(null);
+  };
 
   const processSingleVideo = async (url: string, playlistId?: string) => {
     const videoId = extractVideoId(url);
@@ -57,7 +152,7 @@ const App: React.FC = () => {
       tools: partialGuide.tools || [],
       steps: partialGuide.steps || [],
       createdAt: Date.now(),
-      sources: sources // Store the search sources
+      sources: sources
     } as Guide;
   };
 
@@ -94,11 +189,13 @@ const App: React.FC = () => {
           });
 
           const guide = await processSingleVideo(videoUrl, playlistId);
-          if (guide) newGuides.push(guide);
+          if (guide) {
+            newGuides.push(guide);
+            await saveGuideToHistory(guide);
+          }
         }
 
         if (newGuides.length > 0) {
-          setHistory(prev => [...newGuides.reverse(), ...prev]); // Add new ones at top
           setCurrentGuide(newGuides[0]); // Show first one
         }
 
@@ -118,7 +215,7 @@ const App: React.FC = () => {
         
         if (guide) {
           setLoadingState({ status: AppStatus.GENERATING, message: 'Finalizing guide...', progress: 90 });
-          setHistory(prev => [guide, ...prev]);
+          await saveGuideToHistory(guide);
           setCurrentGuide(guide);
         }
       }
@@ -138,9 +235,12 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 flex-col md:flex-row">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
       
-      {/* Sidebar for Desktop / Mobile Drawer */}
+      {/* Auth Modal */}
+      {isAuthModalOpen && <AuthModal onClose={() => setIsAuthModalOpen(false)} />}
+
+      {/* Sidebar - Now handles its own width in Sidebar.tsx via className props */}
       <Sidebar 
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)} 
@@ -150,19 +250,30 @@ const App: React.FC = () => {
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative min-w-0 transition-all duration-300">
         
         {/* Navigation Bar */}
-        <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-4 lg:px-8 z-30 shrink-0">
-          <div className="flex items-center gap-4">
+        <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-4 lg:px-6 z-30 shrink-0">
+          <div className="flex items-center gap-3">
+            {/* Mobile Toggle */}
             <button 
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="lg:hidden p-2 hover:bg-gray-100 rounded-lg text-gray-600 focus:outline-none"
             >
               <MenuIcon />
             </button>
+            
+            {/* Desktop Toggle */}
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="hidden lg:block p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 focus:outline-none"
+              title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
+            >
+              {isSidebarOpen ? <PanelLeftCloseIcon /> : <PanelLeftOpenIcon />}
+            </button>
+
             <div 
-              className="flex items-center gap-2 cursor-pointer" 
+              className="flex items-center gap-2 cursor-pointer ml-2" 
               onClick={() => setCurrentGuide(null)}
             >
               <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-sm">
@@ -172,9 +283,29 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center">
-             {/* If we had user auth, profile would go here */}
-             <span className="text-xs font-medium text-gray-400 border border-gray-200 px-2 py-1 rounded">Beta</span>
+          <div className="flex items-center gap-4">
+             {user ? (
+               <div className="flex items-center gap-3">
+                 <div className="text-xs text-gray-500 hidden sm:block">
+                   {user.email}
+                 </div>
+                 <button 
+                   onClick={handleSignOut}
+                   className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                   title="Sign Out"
+                 >
+                   <LogOutIcon className="w-5 h-5" />
+                 </button>
+               </div>
+             ) : (
+               <button
+                 onClick={() => setIsAuthModalOpen(true)}
+                 className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-brand-600 bg-gray-50 hover:bg-brand-50 px-3 py-2 rounded-lg transition-colors border border-gray-200 hover:border-brand-200"
+               >
+                 <UserIcon className="w-4 h-4" />
+                 <span>Sign In</span>
+               </button>
+             )}
           </div>
         </header>
 
