@@ -145,6 +145,7 @@ const App: React.FC = () => {
         onClose={() => setIsSidebarOpen(false)} 
         history={history}
         onSelectGuide={setCurrentGuide}
+        onGoHome={() => setCurrentGuide(null)}
       />
 
       {/* Main Content Area */}

@@ -1,15 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Guide } from '../types';
-import { HistoryIcon, XIcon, ArrowRightIcon } from './Icons';
+import { HistoryIcon, XIcon, ArrowRightIcon, SearchIcon, PlusIcon } from './Icons';
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   history: Guide[];
   onSelectGuide: (guide: Guide) => void;
+  onGoHome: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, history, onSelectGuide }) => {
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, history, onSelectGuide, onGoHome }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredHistory = history.filter(guide => 
+    guide.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    guide.summary.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <>
       {/* Backdrop */}
@@ -23,14 +31,39 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, history, onSelectGui
       {/* Panel */}
       <div className={`fixed inset-y-0 left-0 w-80 bg-white border-r border-gray-200 z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="h-full flex flex-col">
-          <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-            <div className="flex items-center gap-2 text-gray-900 font-bold">
-              <HistoryIcon className="w-5 h-5 text-brand-600" />
-              <span>Library</span>
+          {/* Header Section */}
+          <div className="p-4 border-b border-gray-100 bg-gray-50 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-gray-900 font-bold">
+                <HistoryIcon className="w-5 h-5 text-brand-600" />
+                <span>Library</span>
+              </div>
+              <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded text-gray-500 lg:hidden">
+                <XIcon className="w-5 h-5" />
+              </button>
             </div>
-            <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded text-gray-500">
-              <XIcon className="w-5 h-5" />
+
+            <button
+              onClick={() => {
+                onGoHome();
+                onClose();
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-700 text-white py-2 rounded-lg font-medium transition-colors shadow-sm"
+            >
+              <PlusIcon className="w-4 h-4" />
+              New Guide
             </button>
+
+            <div className="relative">
+              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input 
+                type="text" 
+                placeholder="Search history..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent bg-white"
+              />
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -39,8 +72,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, history, onSelectGui
                 <p>No guides yet.</p>
                 <p className="text-xs mt-2">Generate your first guide to see it here.</p>
               </div>
+            ) : filteredHistory.length === 0 ? (
+              <div className="text-center py-10 text-gray-400">
+                <p>No guides found.</p>
+                <p className="text-xs mt-2">Try a different search term.</p>
+              </div>
             ) : (
-              history.map((guide) => (
+              filteredHistory.map((guide) => (
                 <button 
                   key={guide.id}
                   onClick={() => {
