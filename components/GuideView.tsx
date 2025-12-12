@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { Guide } from '../types';
-import { ClockIcon, ToolIcon, CopyIcon, CheckIcon } from './Icons';
+import { ClockIcon, ToolIcon, CopyIcon, CheckIcon, PlayIcon } from './Icons';
 
 interface GuideViewProps {
   guide: Guide;
 }
 
 const GuideView: React.FC<GuideViewProps> = ({ guide }) => {
-  const [copied, setCopied] = React.useState(false);
+  const [copied, setCopied] = useState(false);
+  const [videoKey, setVideoKey] = useState(0); // Used to force iframe refresh for seek
+  const [seekTime, setSeekTime] = useState(0);
 
   const copyToClipboard = () => {
     let text = `# ${guide.title}\n\n${guide.summary}\n\n`;
@@ -15,7 +17,9 @@ const GuideView: React.FC<GuideViewProps> = ({ guide }) => {
     text += `## Prerequisites\n${guide.prerequisites.map(p => `- ${p}`).join('\n')}\n\n`;
     text += `## Steps\n`;
     guide.steps.forEach(step => {
-      text += `### ${step.stepNumber}. ${step.title}\n${step.description}\n`;
+      text += `### ${step.stepNumber}. ${step.title}`;
+      if (step.estimatedTime) text += ` (${step.estimatedTime})`;
+      text += `\n${step.description}\n`;
       if (step.codeSnippet) text += `\`\`\`\n${step.codeSnippet}\n\`\`\`\n`;
       text += `\n`;
     });
@@ -23,6 +27,16 @@ const GuideView: React.FC<GuideViewProps> = ({ guide }) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleTimestampClick = (timestamp: string) => {
+    const parts = timestamp.split(':').map(Number);
+    let seconds = 0;
+    if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
+    if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    
+    setSeekTime(seconds);
+    setVideoKey(prev => prev + 1); // Force re-render of iframe with new start time
   };
 
   return (
@@ -41,6 +55,12 @@ const GuideView: React.FC<GuideViewProps> = ({ guide }) => {
             <ClockIcon className="w-4 h-4 mr-1" />
             {guide.estimatedTime}
           </span>
+          {guide.playlistId && (
+            <span className="px-3 py-1 rounded-full bg-purple-100 text-purple-700 flex items-center gap-1">
+               <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+               Playlist
+            </span>
+          )}
         </div>
         
         <h1 className="text-3xl md:text-4xl font-bold text-gray-900 font-serif leading-tight">
@@ -108,9 +128,29 @@ const GuideView: React.FC<GuideViewProps> = ({ guide }) => {
                 </div>
 
                 <div className="pt-1">
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
-                    {step.title}
-                  </h3>
+                  <div className="flex flex-col sm:flex-row sm:items-baseline gap-2 mb-2">
+                    <h3 className="text-xl font-bold text-gray-900">
+                      {step.title}
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      {step.estimatedTime && (
+                        <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                          {step.estimatedTime}
+                        </span>
+                      )}
+                      {step.timestamp && (
+                        <button 
+                          onClick={() => handleTimestampClick(step.timestamp!)}
+                          className="text-xs font-medium text-brand-600 bg-brand-50 border border-brand-200 hover:bg-brand-100 px-2 py-0.5 rounded flex items-center gap-1 transition-colors"
+                          title="Jump to video section"
+                        >
+                          <PlayIcon className="w-3 h-3" />
+                          {step.timestamp}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  
                   <div className="prose prose-gray max-w-none text-gray-600 leading-relaxed whitespace-pre-line">
                     {step.description}
                   </div>
@@ -133,8 +173,9 @@ const GuideView: React.FC<GuideViewProps> = ({ guide }) => {
           <div className="sticky top-8 space-y-6">
             <div className="rounded-xl overflow-hidden shadow-lg bg-black aspect-video">
               <iframe 
+                key={videoKey}
                 className="w-full h-full"
-                src={`https://www.youtube.com/embed/${guide.videoId}`} 
+                src={`https://www.youtube.com/embed/${guide.videoId}?start=${seekTime}&autoplay=1`}
                 title="YouTube video player" 
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                 allowFullScreen

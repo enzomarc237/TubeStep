@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Guide, AppStatus, LoadingState } from './types';
-import { generateGuideFromVideo, extractVideoId } from './services/geminiService';
+import { generateGuideFromVideo, extractVideoId, extractPlaylistId, getVideosFromPlaylist } from './services/geminiService';
 import LoadingOverlay from './components/LoadingOverlay';
 import GuideView from './components/GuideView';
 import Sidebar from './components/Sidebar';
@@ -36,55 +36,94 @@ const App: React.FC = () => {
     localStorage.setItem('tubestep_history', JSON.stringify(history));
   }, [history]);
 
+  const processSingleVideo = async (url: string, playlistId?: string) => {
+    const videoId = extractVideoId(url);
+    if (!videoId) return null;
+
+    // Call Gemini
+    const partialGuide = await generateGuideFromVideo(url);
+    
+    // Create Guide object
+    return {
+      id: crypto.randomUUID(),
+      videoUrl: url,
+      videoId: videoId,
+      playlistId: playlistId,
+      title: partialGuide.title || "Untitled Guide",
+      summary: partialGuide.summary || "No summary available.",
+      estimatedTime: partialGuide.estimatedTime || "Unknown",
+      difficulty: partialGuide.difficulty || "Beginner",
+      prerequisites: partialGuide.prerequisites || [],
+      tools: partialGuide.tools || [],
+      steps: partialGuide.steps || [],
+      createdAt: Date.now()
+    } as Guide;
+  };
+
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!urlInput.trim()) return;
 
-    const videoId = extractVideoId(urlInput);
-    if (!videoId) {
-      alert("Invalid YouTube URL. Please use a standard URL (e.g., youtube.com/watch?v=...)");
-      return;
-    }
+    // Check for Playlist
+    const playlistId = extractPlaylistId(urlInput);
+    const isPlaylist = !!playlistId;
 
-    // Reset current view
+    // Reset current view if it's a new request
     setCurrentGuide(null);
 
-    // Simulation of stages for UX
-    setLoadingState({ status: AppStatus.FETCHING_TRANSCRIPT, message: 'Connecting to video source', progress: 10 });
-    
     try {
-      // Stage 1: Simulated Fetch (Wait 1.5s)
-      await new Promise(r => setTimeout(r, 1500));
-      setLoadingState({ status: AppStatus.ANALYZING, message: 'Analyzing video structure', progress: 40 });
+      if (isPlaylist && playlistId) {
+        setLoadingState({ status: AppStatus.FETCHING_TRANSCRIPT, message: 'Found Playlist. Analyzing...', progress: 5 });
+        const videos = await getVideosFromPlaylist(playlistId);
+        
+        if (videos.length === 0) {
+           throw new Error("Could not retrieve videos from this playlist.");
+        }
 
-      // Stage 2: Call Gemini
-      const partialGuide = await generateGuideFromVideo(urlInput);
-      
-      setLoadingState({ status: AppStatus.GENERATING, message: 'Writing step-by-step instructions', progress: 80 });
-      
-      // Stage 3: Finalize
-      await new Promise(r => setTimeout(r, 800)); // Smooth transition
+        const newGuides: Guide[] = [];
+        
+        // Process sequentially to show progress
+        for (let i = 0; i < videos.length; i++) {
+          const videoUrl = videos[i];
+          const progressStep = 100 / videos.length;
+          setLoadingState({ 
+            status: AppStatus.GENERATING, 
+            message: `Processing video ${i + 1} of ${videos.length}`, 
+            progress: Math.round((i * progressStep)) 
+          });
 
-      const newGuide: Guide = {
-        id: crypto.randomUUID(),
-        videoUrl: urlInput,
-        videoId: videoId,
-        title: partialGuide.title || "Untitled Guide",
-        summary: partialGuide.summary || "No summary available.",
-        estimatedTime: partialGuide.estimatedTime || "Unknown",
-        difficulty: partialGuide.difficulty || "Beginner",
-        prerequisites: partialGuide.prerequisites || [],
-        tools: partialGuide.tools || [],
-        steps: partialGuide.steps || [],
-        createdAt: Date.now()
-      };
+          const guide = await processSingleVideo(videoUrl, playlistId);
+          if (guide) newGuides.push(guide);
+        }
 
-      setHistory(prev => [newGuide, ...prev]);
-      setCurrentGuide(newGuide);
+        if (newGuides.length > 0) {
+          setHistory(prev => [...newGuides.reverse(), ...prev]); // Add new ones at top
+          setCurrentGuide(newGuides[0]); // Show first one
+        }
+
+      } else {
+        // Single Video
+        const videoId = extractVideoId(urlInput);
+        if (!videoId) {
+          alert("Invalid YouTube URL.");
+          return;
+        }
+
+        setLoadingState({ status: AppStatus.FETCHING_TRANSCRIPT, message: 'Connecting to video source', progress: 10 });
+        await new Promise(r => setTimeout(r, 1000)); // UX delay
+        
+        setLoadingState({ status: AppStatus.ANALYZING, message: 'Analyzing video structure', progress: 40 });
+        const guide = await processSingleVideo(urlInput);
+        
+        if (guide) {
+          setLoadingState({ status: AppStatus.GENERATING, message: 'Finalizing guide...', progress: 90 });
+          setHistory(prev => [guide, ...prev]);
+          setCurrentGuide(guide);
+        }
+      }
+
       setUrlInput('');
       setLoadingState({ status: AppStatus.COMPLETE, message: 'Done!', progress: 100 });
-      
-      // Reset loading state after a moment
       setTimeout(() => {
         setLoadingState({ status: AppStatus.IDLE, message: '', progress: 0 });
       }, 500);
@@ -92,7 +131,7 @@ const App: React.FC = () => {
     } catch (error) {
       console.error(error);
       setLoadingState({ status: AppStatus.ERROR, message: 'Failed to generate guide', progress: 0 });
-      alert("Something went wrong. Please check your API key or try a different video.");
+      alert("Something went wrong. Please check your URL and try again.");
       setLoadingState({ status: AppStatus.IDLE, message: '', progress: 0 });
     }
   };
@@ -166,7 +205,7 @@ const App: React.FC = () => {
                       type="text"
                       value={urlInput}
                       onChange={(e) => setUrlInput(e.target.value)}
-                      placeholder="Paste YouTube URL here..."
+                      placeholder="Paste YouTube URL or Playlist here..."
                       className="flex-1 px-4 py-3 text-gray-700 outline-none placeholder-gray-400 bg-transparent text-lg w-full"
                     />
                     <button 
@@ -187,7 +226,7 @@ const App: React.FC = () => {
                     ✓ Export to Markdown
                   </span>
                   <span className="flex items-center gap-1">
-                    ✓ Free for Beta
+                    ✓ Playlists Support
                   </span>
                 </div>
               </div>

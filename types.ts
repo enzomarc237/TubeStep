@@ -3,12 +3,15 @@ export interface Step {
   title: string;
   description: string;
   codeSnippet?: string; // Optional code block
+  timestamp?: string; // e.g., "02:15"
+  estimatedTime?: string; // e.g., "5 mins"
 }
 
 export interface Guide {
   id: string;
   videoUrl: string;
   videoId: string;
+  playlistId?: string;
   title: string;
   summary: string;
   estimatedTime: string;

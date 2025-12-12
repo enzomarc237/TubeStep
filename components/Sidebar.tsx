@@ -47,15 +47,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, history, onSelectGui
                     onSelectGuide(guide);
                     onClose();
                   }}
-                  className="w-full text-left p-3 rounded-lg hover:bg-gray-50 border border-gray-100 hover:border-brand-200 transition-all group"
+                  className="w-full text-left p-3 rounded-lg hover:bg-gray-50 border border-gray-100 hover:border-brand-200 transition-all group relative overflow-hidden"
                 >
+                  {guide.playlistId && (
+                     <div className="absolute top-0 right-0 bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-bl-lg">
+                       PLAYLIST
+                     </div>
+                  )}
                   <div className="flex items-start gap-3">
                     <img 
                       src={`https://img.youtube.com/vi/${guide.videoId}/default.jpg`} 
                       alt="Thumbnail" 
                       className="w-16 h-12 object-cover rounded bg-gray-200"
                     />
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 pt-1">
                       <h4 className="text-sm font-medium text-gray-900 line-clamp-2 leading-snug group-hover:text-brand-700">
                         {guide.title}
                       </h4>
