@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Guide } from '../types';
-import { ClockIcon, ToolIcon, CopyIcon, CheckIcon, PlayIcon } from './Icons';
+import { ClockIcon, ToolIcon, CopyIcon, CheckIcon, PlayIcon, SearchIcon } from './Icons';
 
 interface GuideViewProps {
   guide: Guide;
@@ -23,6 +23,10 @@ const GuideView: React.FC<GuideViewProps> = ({ guide }) => {
       if (step.codeSnippet) text += `\`\`\`\n${step.codeSnippet}\n\`\`\`\n`;
       text += `\n`;
     });
+
+    if (guide.sources && guide.sources.length > 0) {
+      text += `## References\n${guide.sources.map(s => `- ${s.title}: ${s.uri}`).join('\n')}\n`;
+    }
 
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -181,6 +185,7 @@ const GuideView: React.FC<GuideViewProps> = ({ guide }) => {
                 allowFullScreen
               ></iframe>
             </div>
+            
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
               <p className="text-sm text-gray-500 mb-2">Source Video</p>
               <a 
@@ -192,6 +197,31 @@ const GuideView: React.FC<GuideViewProps> = ({ guide }) => {
                 {guide.title} (Original)
               </a>
             </div>
+
+            {/* References Section */}
+            {guide.sources && guide.sources.length > 0 && (
+              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                <div className="flex items-center gap-2 mb-3 text-gray-900 font-bold text-sm">
+                   <SearchIcon className="w-4 h-4 text-brand-500" />
+                   <span>References</span>
+                </div>
+                <ul className="space-y-2">
+                  {guide.sources.map((source, idx) => (
+                    <li key={idx}>
+                      <a 
+                        href={source.uri}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-gray-600 hover:text-brand-600 hover:underline block truncate"
+                        title={source.title}
+                      >
+                        {source.title}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
 

@@ -59,20 +59,26 @@ export const getVideosFromPlaylist = async (playlistId: string): Promise<string[
 
 export const generateGuideFromVideo = async (
   videoUrl: string
-): Promise<Partial<Guide>> => {
+): Promise<{ guide: Partial<Guide>; sources: { title: string; uri: string }[] }> => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
     throw new Error("API Key is missing.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
+  const videoId = extractVideoId(videoUrl);
 
   // Since we cannot use responseSchema with tools, we must inject the schema into the prompt.
+  // Enhanced prompt to ensure model uses ID to find the video content.
   const prompt = `
-    I need a step-by-step guide based on this YouTube video URL: ${videoUrl}.
+    I need a step-by-step guide based on the YouTube video with ID: "${videoId}" (URL: ${videoUrl}).
     
-    Since you cannot directly watch the video, use the Google Search tool to find information about this specific video title or its likely content based on the ID/URL context.
-    If exact video details are unavailable, generate a best-effort guide for the likely topic inferred from the URL context or title if accessible.
+    **INSTRUCTIONS:**
+    1. **SEARCH**: Use the Google Search tool to find the specific video title, description, and content summary. 
+       - Query 1: "youtube video ${videoId}"
+       - Query 2: "${videoUrl}"
+    2. **VERIFY**: Ensure the guide corresponds to the content of the video found. If the specific video is not found, search for "tutorial for ${videoId}" or infer the best likely tutorial based on available metadata found in search.
+    3. **GENERATE**: Create a structured JSON guide based on the retrieved information.
     
     The output MUST be a valid JSON object matching this schema structure:
     ${JSON.stringify(GUIDE_SCHEMA, null, 2)}
@@ -93,8 +99,6 @@ export const generateGuideFromVideo = async (
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
-        // responseMimeType: "application/json" is NOT supported with tools
-        // responseSchema is NOT supported with tools
         tools: [{ googleSearch: {} }], 
       },
     });
@@ -104,9 +108,15 @@ export const generateGuideFromVideo = async (
       throw new Error("No response generated from Gemini.");
     }
 
+    // Extract grounding metadata (sources)
+    const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks
+      ?.map((chunk: any) => chunk.web)
+      .filter((web: any) => web)
+      .map((web: any) => ({ title: web.title, uri: web.uri })) || [];
+
     try {
       const jsonResponse = JSON.parse(cleanJsonText(text));
-      return jsonResponse;
+      return { guide: jsonResponse, sources };
     } catch (parseError) {
       console.error("JSON Parse Error:", parseError, "Raw Text:", text);
       throw new Error("Failed to parse Gemini response as JSON.");

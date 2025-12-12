@@ -41,7 +41,7 @@ const App: React.FC = () => {
     if (!videoId) return null;
 
     // Call Gemini
-    const partialGuide = await generateGuideFromVideo(url);
+    const { guide: partialGuide, sources } = await generateGuideFromVideo(url);
     
     // Create Guide object
     return {
@@ -56,7 +56,8 @@ const App: React.FC = () => {
       prerequisites: partialGuide.prerequisites || [],
       tools: partialGuide.tools || [],
       steps: partialGuide.steps || [],
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      sources: sources // Store the search sources
     } as Guide;
   };
 

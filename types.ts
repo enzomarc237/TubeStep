@@ -20,6 +20,7 @@ export interface Guide {
   tools: string[];
   steps: Step[];
   createdAt: number;
+  sources?: { title: string; uri: string }[];
 }
 
 export enum AppStatus {
